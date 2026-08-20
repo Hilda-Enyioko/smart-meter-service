@@ -1,0 +1,31 @@
+from django.conf import settings
+from django.db import models
+
+
+class Meter(models.Model):
+    class Status(models.TextChoices):
+        ONLINE = 'online', 'Online'
+        OFFLINE = 'offline', 'Offline'
+
+    serial_number = models.CharField(max_length=64, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='meters',
+    )
+    nickname = models.CharField(max_length=100, blank=True)
+    location = models.CharField(max_length=255, blank=True)
+
+    relay_state = models.BooleanField(default=True)  # True = ON
+    credit_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OFFLINE)
+
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    linked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.serial_number} ({'linked' if self.user else 'unlinked'})"

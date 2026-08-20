@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .permissions import IsAdminRole
-from .serializers import AdminUserSerializer, RegisterSerializer, UserSerializer
+from .serializers import AdminUserSerializer, RegisterSerializer, UserSerializer, ChangePasswordSerializer
 
 User = get_user_model()
 
@@ -92,3 +92,16 @@ class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = User.objects.all()
     serializer_class = AdminUserSerializer
     permission_classes = [IsAdminRole]
+    
+
+class ChangePasswordView(APIView):
+    """Authenticated user changes their own password."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save()
+        return Response({'detail': 'Password updated successfully.'}, status=status.HTTP_200_OK)
