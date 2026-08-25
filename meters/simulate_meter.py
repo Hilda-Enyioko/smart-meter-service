@@ -1,10 +1,14 @@
 import requests
 import random
 import time
+import os
+from dotenv import load_dotenv
 
-BASE_URL = "https://smart-meter-service-72mv.onrender.com/api/meters/device"
+load_dotenv()
+
+BASE_URL = BASE_URL = os.getenv("BASE_URL", "https://smart-meter-service-72mv.onrender.com/api/meters/device")
 SERIAL_NUMBER = "MTR-001"
-DEVICE_KEY = "paste-the-device_key-here"
+DEVICE_KEY = os.getenv("DEVICE_KEY")
 
 def send_telemetry():
     payload = {
