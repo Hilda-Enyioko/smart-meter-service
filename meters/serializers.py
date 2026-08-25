@@ -45,3 +45,28 @@ class TelemetryReadingSerializer(serializers.ModelSerializer):
     class Meta:
         model = TelemetryReading
         fields = ('voltage', 'current', 'power', 'energy', 'relay_state', 'created_at')
+
+
+class MeterDashboardSerializer(serializers.ModelSerializer):
+    """Everything needed for the single-meter dashboard view."""
+    is_online = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Meter
+        fields = (
+            'id',
+            'serial_number',
+            'nickname',
+            'credit_balance',
+            'status',
+            'is_online',
+            'relay_state',
+            'last_voltage',
+            'last_current',
+            'last_power',
+            'last_energy',
+            'last_seen_at',
+        )
+
+    def get_is_online(self, obj):
+        return obj.status == Meter.Status.ONLINE

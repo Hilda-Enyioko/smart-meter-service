@@ -4,8 +4,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Meter, TelemetryReading
-from .serializers import MeterRegisterSerializer, MeterSerializer, TelemetryInSerializer
+from .serializers import MeterRegisterSerializer, MeterSerializer, TelemetryInSerializer, MeterDashboardSerializer
 from .permissions import DeviceKeyAuthenticated
+from django.shortcuts import get_object_or_404
 
 
 class RegisterMeterView(APIView):
@@ -118,3 +119,17 @@ class DeviceCommandView(APIView):
             'relay_command': 'ON' if meter.desired_relay_state else 'OFF',
             'credit_balance': meter.credit_balance,
         })
+
+
+class MeterDashboardView(APIView):
+    """
+    Single-meter dashboard: credit balance, online status, relay state,
+    voltage, current, power, energy, last communication timestamp.
+    Only accessible by the user who owns/linked the meter.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        meter = get_object_or_404(Meter, pk=pk, user=request.user)
+        serializer = MeterDashboardSerializer(meter)
+        return Response(serializer.data, status=status.HTTP_200_OK)
