@@ -1,18 +1,17 @@
 from rest_framework import serializers
-
-from .models import Meter
+from .models import Meter, TelemetryReading
 
 
 class MeterSerializer(serializers.ModelSerializer):
     class Meta:
         model = Meter
         fields = (
-            'id', 'serial_number', 'nickname', 'location',
+            'id', 'serial_number', 'device_key', 'nickname', 'location',
             'relay_state', 'credit_balance', 'status',
             'last_seen_at', 'linked_at', 'created_at', 'updated_at',
         )
         read_only_fields = (
-            'id', 'serial_number', 'relay_state', 'credit_balance',
+            'id', 'serial_number', 'device_key', 'relay_state', 'credit_balance',
             'status', 'last_seen_at', 'linked_at', 'created_at', 'updated_at',
         )
 
@@ -26,9 +25,23 @@ class MeterRegisterSerializer(serializers.Serializer):
         try:
             meter = Meter.objects.get(serial_number=value)
         except Meter.DoesNotExist:
-            # POC behavior: unknown serial numbers are auto-provisioned on first link.
             return value
 
         if meter.user is not None:
             raise serializers.ValidationError("This meter is already linked to another account.")
         return value
+
+
+class TelemetryInSerializer(serializers.Serializer):
+    """What the ESP32 sends."""
+    voltage = serializers.FloatField()
+    current = serializers.FloatField()
+    power = serializers.FloatField()
+    energy = serializers.FloatField()
+    relay_state = serializers.BooleanField()
+
+
+class TelemetryReadingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TelemetryReading
+        fields = ('voltage', 'current', 'power', 'energy', 'relay_state', 'created_at')
