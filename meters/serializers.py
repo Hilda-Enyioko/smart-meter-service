@@ -70,3 +70,36 @@ class MeterDashboardSerializer(serializers.ModelSerializer):
 
     def get_is_online(self, obj):
         return obj.status == Meter.Status.ONLINE
+
+
+class TelemetryHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TelemetryReading
+        fields = ('voltage', 'current', 'power', 'energy', 'relay_state', 'created_at')
+
+
+class ConsumptionBucketSerializer(serializers.Serializer):
+    """One row of aggregated consumption for a given day/week/month."""
+    period_start = serializers.DateTimeField()
+    total_energy_kwh = serializers.FloatField()
+    total_cost = serializers.FloatField()
+    reading_count = serializers.IntegerField()
+    avg_power = serializers.FloatField(allow_null=True)
+
+
+class CreditUsageAnalysisSerializer(serializers.Serializer):
+    current_credit_balance = serializers.DecimalField(max_digits=10, decimal_places=2)
+    total_energy_kwh_period = serializers.FloatField()
+    total_cost_period = serializers.FloatField()
+    average_daily_cost = serializers.FloatField()
+    average_daily_energy_kwh = serializers.FloatField()
+    days_in_period = serializers.IntegerField()
+
+
+class RuntimeEstimateSerializer(serializers.Serializer):
+    current_credit_balance = serializers.DecimalField(max_digits=10, decimal_places=2)
+    average_hourly_cost = serializers.FloatField(allow_null=True)
+    average_hourly_energy_kwh = serializers.FloatField(allow_null=True)
+    estimated_hours_remaining = serializers.FloatField(allow_null=True)
+    estimated_days_remaining = serializers.FloatField(allow_null=True)
+    basis = serializers.CharField()

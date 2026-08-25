@@ -186,3 +186,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://smart-meter-azure.vercel.app",
     "https://smart-meter-service-72mv.onrender.com",
 ]
+
+# Rate used to convert energy (kWh) into credit deducted. Shared between
+# meters/views.py (telemetry ingestion) and analytics calculations.
+CREDIT_RATE_PER_KWH = 0.15
