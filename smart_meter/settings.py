@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'users',
     'meters',
     'notifications',
+    'payments',
 ]
 
 MIDDLEWARE = [
@@ -190,3 +191,14 @@ CSRF_TRUSTED_ORIGINS = [
 # Rate used to convert energy (kWh) into credit deducted. Shared between
 # meters/views.py (telemetry ingestion) and analytics calculations.
 CREDIT_RATE_PER_KWH = 0.15
+
+# Interswitch Web Checkout (sandbox env)
+INTERSWITCH_MERCHANT_CODE = os.getenv('INTERSWITCH_MERCHANT_CODE', 'MX007')
+INTERSWITCH_PAY_ITEM_ID = os.getenv('INTERSWITCH_PAY_ITEM_ID', '101007')
+INTERSWITCH_MODE = os.getenv('INTERSWITCH_MODE', 'TEST')  # 'TEST' or 'LIVE'
+INTERSWITCH_REQUERY_BASE_URL = os.getenv(
+    'INTERSWITCH_REQUERY_BASE_URL',
+    'https://sandbox.interswitchng.com'  # LIVE: https://webpay.interswitchng.com
+)
+INTERSWITCH_CURRENCY_CODE = 566  # NGN, ISO 4217 numeric
+SITE_REDIRECT_URL = os.getenv('SITE_REDIRECT_URL', 'https://smart-meter-azure.vercel.app/payment-response')
