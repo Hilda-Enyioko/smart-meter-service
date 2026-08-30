@@ -1,4 +1,6 @@
 import logging
+import hashlib
+import hmac
 
 from django.conf import settings
 from django.db import transaction as db_transaction
@@ -8,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from meters.models import Meter
-from .interswitch import InterswitchVerificationError, requery_transaction
+from .paystack import verify_transaction, PaystackVerificationError
 from .models import Transaction
 from .serializers import (
     InitializeCheckoutSerializer,
@@ -23,7 +25,7 @@ class InitializeCheckoutView(APIView):
     """
     POST /api/payments/initialize/   body: { meter_id, amount }
     Creates a pending Transaction with a unique txn_ref, and returns everything
-    the frontend needs to call window.webpayCheckout(...) for Inline Checkout.
+    the frontend needs to open Paystack's Inline Popup.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -39,24 +41,24 @@ class InitializeCheckoutView(APIView):
             meter=meter,
             txn_ref=Transaction.generate_txn_ref(),
             amount=data['amount'],
-            currency_code=str(settings.INTERSWITCH_CURRENCY_CODE),
+            currency_code='NGN',
             status=Transaction.Status.PENDING,
         )
 
         return Response({
             'txn_ref': txn.txn_ref,
             'checkout_config': {
-                'merchant_code': settings.INTERSWITCH_MERCHANT_CODE,
-                'pay_item_id': settings.INTERSWITCH_PAY_ITEM_ID,
-                'pay_item_name': f"Electricity recharge - {meter.serial_number}",
-                'txn_ref': txn.txn_ref,
+                'key': settings.PAYSTACK_PUBLIC_KEY,
+                'email': request.user.email,
                 'amount': txn.amount_minor_units,  # kobo
-                'currency': settings.INTERSWITCH_CURRENCY_CODE,
-                'cust_name': request.user.get_full_name() or request.user.username,
-                'cust_email': request.user.email,
-                'cust_id': str(request.user.id),
-                'site_redirect_url': settings.SITE_REDIRECT_URL,
-                'mode': settings.INTERSWITCH_MODE,
+                'ref': txn.txn_ref,
+                'currency': 'NGN',
+                'callback_url': settings.PAYSTACK_CALLBACK_URL,
+                'metadata': {
+                    'meter_id': meter.id,
+                    'meter_serial_number': meter.serial_number,
+                    'user_id': request.user.id,
+                },
             }
         }, status=status.HTTP_201_CREATED)
 
@@ -64,9 +66,7 @@ class InitializeCheckoutView(APIView):
 def _verify_and_fulfill(txn_ref):
     """
     Shared verification logic used by both the client-triggered verify endpoint
-    AND the webhook endpoint, so both paths are equally idempotent and equally
-    untrusting of whatever payload triggered them.
-
+    AND the webhook endpoint, so both paths are equally idempotent.
     Returns (transaction, already_processed: bool)
     """
     try:
@@ -74,14 +74,13 @@ def _verify_and_fulfill(txn_ref):
     except Transaction.DoesNotExist:
         return None, False
 
-    # Idempotency: if we already marked this successful, don't credit twice.
     if txn.status == Transaction.Status.SUCCESS:
         return txn, True
 
     try:
-        result = requery_transaction(txn_ref, txn.amount_minor_units)
-    except InterswitchVerificationError as e:
-        logger.error("Interswitch requery failed for %s: %s", txn_ref, e)
+        result = verify_transaction(txn_ref, txn.amount_minor_units)
+    except PaystackVerificationError as e:
+        logger.error("Paystack verify failed for %s: %s", txn_ref, e)
         return txn, False
 
     txn.provider_response = result['raw']
@@ -91,15 +90,12 @@ def _verify_and_fulfill(txn_ref):
         from django.utils import timezone
         txn.verified_at = timezone.now()
         txn.save()
-
-        # Automatic credit fulfillment
         txn.meter.apply_credit(txn.amount)
     else:
         txn.status = Transaction.Status.FAILED
         txn.save()
 
     return txn, False
-
 
 class VerifyTransactionView(APIView):
     """
@@ -134,37 +130,44 @@ class VerifyTransactionView(APIView):
         })
 
 
-class InterswitchWebhookView(APIView):
+class PaystackWebhookView(APIView):
     """
-    POST /api/payments/webhook/interswitch/
-    Public endpoint (no JWT — Interswitch's servers call this, not the browser).
+    POST /api/payments/webhook/paystack/
+    Public endpoint — Paystack's servers call this, not the browser.
 
-    NOTE: Interswitch's webhook payload format/signature scheme should be
-    confirmed against your merchant dashboard's webhook configuration docs —
-    the public Web Checkout doc doesn't specify a signature header, only that
-    "a POST request is made every time a transaction status changes." Because
-    of that, this handler treats the webhook as a NOTIFICATION ONLY — a
-    trigger to re-run the same server-side requery used by VerifyTransactionView,
-    never as a source of truth by itself. This keeps the endpoint safe even if
-    signature validation can't be confirmed/added, and keeps both trigger paths
-    (client callback + webhook) sharing one idempotent code path.
+    Paystack signs every webhook with an HMAC-SHA512 hash of the raw request
+    body, using your secret key, sent in the X-Paystack-Signature header.
+    This IS validated below (unlike the earlier Interswitch draft, where the
+    signature scheme wasn't documented) — requests that fail this check are
+    rejected outright and never touch verification or credit logic.
     """
     permission_classes = [permissions.AllowAny]
 
     @db_transaction.atomic
     def post(self, request):
-        txn_ref = request.data.get('txnref') or request.data.get('txn_ref')
-        if not txn_ref:
-            return Response({'detail': 'Missing txn_ref.'}, status=status.HTTP_400_BAD_REQUEST)
+        signature = request.headers.get('X-Paystack-Signature', '')
+        computed_signature = hmac.new(
+            key=settings.PAYSTACK_SECRET_KEY.encode('utf-8'),
+            msg=request.body,
+            digestmod=hashlib.sha512,
+        ).hexdigest()
 
-        txn, _already = _verify_and_fulfill(txn_ref)
-        if txn is None:
-            # Return 200 anyway — returning an error here just causes the
-            # provider to retry a webhook for a txn_ref we'll never recognize.
-            logger.warning("Webhook received for unknown txn_ref: %s", txn_ref)
-            return Response({'received': True})
+        if not hmac.compare_digest(computed_signature, signature):
+            logger.warning("Rejected Paystack webhook with invalid signature.")
+            return Response(status=status.HTTP_401_UNAUTHORIZED)
 
-        return Response({'received': True, 'status': txn.status})
+        event = request.data
+        event_type = event.get('event')
+
+        # Only act on successful charge events — ignore everything else.
+        if event_type == 'charge.success':
+            reference = event.get('data', {}).get('reference')
+            if reference:
+                _verify_and_fulfill(reference)
+
+        # Always return 200 quickly so Paystack doesn't retry unnecessarily,
+        # even for event types we don't act on.
+        return Response({'received': True})
 
 
 class TransactionListView(generics.ListAPIView):

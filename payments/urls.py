@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views import (
     InitializeCheckoutView,
-    InterswitchWebhookView,
+    PaystackWebhookView,
     TransactionListView,
     VerifyTransactionView,
 )
@@ -10,6 +10,6 @@ from .views import (
 urlpatterns = [
     path('initialize/', InitializeCheckoutView.as_view(), name='payment-initialize'),
     path('verify/', VerifyTransactionView.as_view(), name='payment-verify'),
-    path('webhook/interswitch/', InterswitchWebhookView.as_view(), name='payment-webhook'),
+    path('webhook/paystack/', PaystackWebhookView.as_view(), name='payment-webhook'),
     path('transactions/', TransactionListView.as_view(), name='payment-transactions'),
 ]

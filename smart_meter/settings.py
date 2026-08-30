@@ -192,13 +192,7 @@ CSRF_TRUSTED_ORIGINS = [
 # meters/views.py (telemetry ingestion) and analytics calculations.
 CREDIT_RATE_PER_KWH = 0.15
 
-# Interswitch Web Checkout (sandbox env)
-INTERSWITCH_MERCHANT_CODE = os.getenv('INTERSWITCH_MERCHANT_CODE', 'MX007')
-INTERSWITCH_PAY_ITEM_ID = os.getenv('INTERSWITCH_PAY_ITEM_ID', '101007')
-INTERSWITCH_MODE = os.getenv('INTERSWITCH_MODE', 'TEST')  # 'TEST' or 'LIVE'
-INTERSWITCH_REQUERY_BASE_URL = os.getenv(
-    'INTERSWITCH_REQUERY_BASE_URL',
-    'https://sandbox.interswitchng.com'  # LIVE: https://webpay.interswitchng.com
-)
-INTERSWITCH_CURRENCY_CODE = 566  # NGN, ISO 4217 numeric
+PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
+PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')
+PAYSTACK_CALLBACK_URL = os.getenv('PAYSTACK_CALLBACK_URL', 'https://smart-meter-azure.vercel.app/payment-response')
 SITE_REDIRECT_URL = os.getenv('SITE_REDIRECT_URL', 'https://smart-meter-azure.vercel.app/payment-response')
