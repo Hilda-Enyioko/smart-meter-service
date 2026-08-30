@@ -11,6 +11,9 @@ from .views import (
     MeterCreditUsageView,
     MeterHistoryView,
     MeterRuntimeEstimateView,
+    AdminAddCreditView,
+    LowCreditThresholdView,
+    RelayControlView,
 )
 
 urlpatterns = [
@@ -24,4 +27,7 @@ urlpatterns = [
     path('<int:pk>/analytics/consumption/', MeterConsumptionView.as_view(), name='meter-consumption'),
     path('<int:pk>/analytics/credit-usage/', MeterCreditUsageView.as_view(), name='meter-credit-usage'),
     path('<int:pk>/analytics/runtime-estimate/', MeterRuntimeEstimateView.as_view(), name='meter-runtime-estimate'),
+    path('<int:pk>/threshold/', LowCreditThresholdView.as_view(), name='meter-threshold'),
+    path('<int:pk>/relay/', RelayControlView.as_view(), name='meter-relay-control'),
+    path('<int:pk>/admin-add-credit/', AdminAddCreditView.as_view(), name='meter-admin-add-credit'),
 ]

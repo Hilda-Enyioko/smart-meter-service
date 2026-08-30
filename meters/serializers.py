@@ -50,6 +50,7 @@ class TelemetryReadingSerializer(serializers.ModelSerializer):
 class MeterDashboardSerializer(serializers.ModelSerializer):
     """Everything needed for the single-meter dashboard view."""
     is_online = serializers.SerializerMethodField()
+    is_low_credit = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Meter
@@ -58,9 +59,12 @@ class MeterDashboardSerializer(serializers.ModelSerializer):
             'serial_number',
             'nickname',
             'credit_balance',
+            'low_credit_threshold',
+            'is_low_credit',
             'status',
             'is_online',
             'relay_state',
+            'desired_relay_state',
             'last_voltage',
             'last_current',
             'last_power',
@@ -70,7 +74,6 @@ class MeterDashboardSerializer(serializers.ModelSerializer):
 
     def get_is_online(self, obj):
         return obj.status == Meter.Status.ONLINE
-
 
 class TelemetryHistorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -103,3 +106,32 @@ class RuntimeEstimateSerializer(serializers.Serializer):
     estimated_hours_remaining = serializers.FloatField(allow_null=True)
     estimated_days_remaining = serializers.FloatField(allow_null=True)
     basis = serializers.CharField()
+
+
+class LowCreditThresholdSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Meter
+        fields = ('low_credit_threshold',)
+
+    def validate_low_credit_threshold(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Threshold cannot be negative.")
+        return value
+
+
+class RelayCommandSerializer(serializers.Serializer):
+    desired_state = serializers.BooleanField()
+
+    def validate_desired_state(self, value):
+        meter = self.context['meter']
+        if value is True and meter.credit_balance <= 0:
+            raise serializers.ValidationError(
+                "Cannot turn power ON — this meter has no credit remaining."
+            )
+        return value
+
+
+class AddCreditSerializer(serializers.Serializer):
+    """TEMPORARY: manual credit top-up for testing the depletion/restoration
+    cycle before the real payment integration exists. Admin-only."""
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=0.01)

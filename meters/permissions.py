@@ -23,3 +23,11 @@ class DeviceKeyAuthenticated(BasePermission):
 
         request.meter = meter
         return True
+
+
+class IsMeterOwnerOrAdmin(BasePermission):
+    """Allows the meter's linked user, or an admin, to control it manually."""
+    def has_object_permission(self, request, view, obj):
+        if request.user.role == request.user.Role.ADMIN:
+            return True
+        return obj.user_id == request.user.id

@@ -18,8 +18,12 @@ from .serializers import (
     CreditUsageAnalysisSerializer,
     RuntimeEstimateSerializer,
     TelemetryHistorySerializer,
+    AddCreditSerializer,
+    LowCreditThresholdSerializer,
+    RelayCommandSerializer,
 )
-from .permissions import DeviceKeyAuthenticated
+from .permissions import DeviceKeyAuthenticated, IsMeterOwnerOrAdmin
+from users.permissions import IsAdminRole
 from django.shortcuts import get_object_or_404
 from django.conf import settings
 
@@ -117,6 +121,7 @@ class DeviceTelemetryView(APIView):
         return Response({
             'received': True,
             'credit_balance': meter.credit_balance,
+            'is_low_credit': meter.is_low_credit,
             'relay_command': 'ON' if meter.desired_relay_state else 'OFF',
         }, status=status.HTTP_200_OK)
 
@@ -352,3 +357,66 @@ class MeterRuntimeEstimateView(APIView):
         }
         serializer = RuntimeEstimateSerializer(data)
         return Response(serializer.data)
+
+
+class LowCreditThresholdView(generics.RetrieveUpdateAPIView):
+    """
+    Configure the low-credit alert threshold for a meter.
+    GET/PATCH /meters/<id>/threshold/
+    """
+    serializer_class = LowCreditThresholdSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Meter.objects.filter(user=self.request.user)
+
+
+class RelayControlView(APIView):
+    """
+    Manual relay control, authorized to the meter's owner or an admin.
+    POST /meters/<id>/relay/   body: { "desired_state": true|false }
+    Sets desired_relay_state; the ESP32 picks this up on its next telemetry
+    POST response or its next /device/command/ poll (within ~10s).
+    Turning ON is blocked server-side if credit_balance <= 0.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsMeterOwnerOrAdmin]
+
+    def post(self, request, pk):
+        meter = get_object_or_404(Meter, pk=pk)
+        self.check_object_permissions(request, meter)
+
+        serializer = RelayCommandSerializer(data=request.data, context={'meter': meter})
+        serializer.is_valid(raise_exception=True)
+
+        meter.desired_relay_state = serializer.validated_data['desired_state']
+        meter.save()
+
+        return Response({
+            'meter_id': meter.id,
+            'desired_relay_state': meter.desired_relay_state,
+            'note': 'Command queued — the meter will apply this on its next check-in.',
+        })
+
+
+class AdminAddCreditView(APIView):
+    """
+    TEMPORARY / admin-only: manually add credit to a meter.
+    POST /meters/<id>/admin-add-credit/   body: { "amount": 10.00 }
+    Exists to let you test the full depletion -> disconnect -> recharge -> 
+    restore cycle before the real payment/recharge endpoints are built.
+    Remove or restrict further once the payments app exists.
+    """
+    permission_classes = [IsAdminRole]
+
+    def post(self, request, pk):
+        meter = get_object_or_404(Meter, pk=pk)
+        serializer = AddCreditSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        meter.apply_credit(serializer.validated_data['amount'])
+
+        return Response({
+            'meter_id': meter.id,
+            'credit_balance': meter.credit_balance,
+            'desired_relay_state': meter.desired_relay_state,
+        })
