@@ -83,7 +83,7 @@ class TelemetryHistorySerializer(serializers.ModelSerializer):
 
 class ConsumptionBucketSerializer(serializers.Serializer):
     """One row of aggregated consumption for a given day/week/month."""
-    period_start = serializers.DateField()
+    period_start = serializers.DateTimeField()
     total_energy_kwh = serializers.FloatField()
     total_cost = serializers.FloatField()
     reading_count = serializers.IntegerField()

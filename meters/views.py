@@ -1,7 +1,7 @@
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Avg, Sum
-from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
+from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.utils import timezone
 from rest_framework.exceptions import ParseError
 from rest_framework import generics, permissions, status
@@ -216,7 +216,7 @@ class MeterConsumptionView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     TRUNC_MAP = {
-        'daily': TruncDate,
+        'daily': TruncDay,
         'weekly': TruncWeek,
         'monthly': TruncMonth,
     }
