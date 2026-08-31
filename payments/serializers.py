@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from meters.models import Meter
-from .models import Transaction
+from .models import Transaction, TransactionAuditLog
 
 
 class InitializeCheckoutSerializer(serializers.Serializer):
@@ -29,3 +29,30 @@ class TransactionSerializer(serializers.ModelSerializer):
             'currency_code', 'status', 'created_at', 'verified_at',
         )
         read_only_fields = fields
+
+
+class TransactionAuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransactionAuditLog
+        fields = ('event', 'detail', 'created_at')
+
+
+class TransactionSerializer(serializers.ModelSerializer):
+    meter_serial_number = serializers.CharField(source='meter.serial_number', read_only=True)
+
+    class Meta:
+        model = Transaction
+        fields = (
+            'id', 'txn_ref', 'meter', 'meter_serial_number', 'amount', 'currency_code',
+            'status', 'fulfillment_status', 'payment_method', 'payment_method_detail',
+            'created_at', 'verified_at', 'fulfilled_at',
+        )
+        read_only_fields = fields
+
+
+class TransactionDetailSerializer(TransactionSerializer):
+    """Adds the full audit trail — used only for the single-transaction detail view."""
+    audit_logs = TransactionAuditLogSerializer(many=True, read_only=True)
+
+    class Meta(TransactionSerializer.Meta):
+        fields = TransactionSerializer.Meta.fields + ('audit_logs',)
