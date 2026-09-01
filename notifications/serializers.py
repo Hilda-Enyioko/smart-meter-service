@@ -1,5 +1,16 @@
 from rest_framework import serializers
-from .models import NotificationPreference
+from .models import Notification,NotificationPreference
+
+class NotificationSerializer(serializers.ModelSerializer):
+    meter_serial_number = serializers.CharField(source='meter.serial_number', read_only=True, default=None)
+
+    class Meta:
+        model = Notification
+        fields = (
+            'id', 'type', 'title', 'message', 'meter', 'meter_serial_number',
+            'email_sent', 'is_read', 'created_at',
+        )
+        read_only_fields = fields
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):
