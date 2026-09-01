@@ -1,6 +1,10 @@
 import secrets
 from django.conf import settings
 from django.db import models
+from decimal import Decimal
+from notifications.services import notify
+from notifications.models import Notification
+
 
 
 def generate_device_key():
@@ -40,6 +44,7 @@ class Meter(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     low_credit_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=5.00)
+    offline_alert_sent = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.serial_number} ({'linked' if self.user else 'unlinked'})"
@@ -49,21 +54,26 @@ class Meter(models.Model):
         return self.credit_balance <= self.low_credit_threshold
 
     def apply_credit(self, amount):
-        """
-        Adds credit to the meter and automatically restores power if the
-        meter was previously cut off. Called by the recharge/payment flow
-        (and, for now, by the admin test-credit endpoint below).
-        """
-        from decimal import Decimal
         amount = Decimal(str(amount))
-
         was_depleted = self.credit_balance <= 0
         self.credit_balance += amount
 
+        restored = False
         if was_depleted and self.credit_balance > 0:
             self.desired_relay_state = True
+            restored = True
 
         self.save()
+
+        if self.user and restored:
+            notify(
+                self.user,
+                Notification.Type.POWER_RESTORATION,
+                f"Power to {self.nickname or self.serial_number} has been restored "
+                f"following a successful recharge.",
+                meter=self,
+            )
+
         return self
 
 

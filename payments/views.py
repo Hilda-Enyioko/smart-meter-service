@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from meters.models import Meter
+from notifications.models import Notification
+from notifications.services import notify
 from .paystack import verify_transaction, PaystackVerificationError
 from .models import Transaction, TransactionAuditLog
 from .serializers import (
@@ -18,6 +20,8 @@ from .serializers import (
     VerifyTransactionSerializer,
     TransactionDetailSerializer,
 )
+from notifications.services import notify
+from notifications.models import Notification
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +145,15 @@ def _verify_and_fulfill(txn_ref, source='verify'):
                 event=TransactionAuditLog.Event.CREDIT_FULFILLED,
                 detail={'amount': str(txn.amount), 'new_balance': str(txn.meter.credit_balance)},
             )
+            if txn.user:
+                notify(
+                    txn.user,
+                    Notification.Type.RECHARGE_CONFIRMATION,
+                    f"Your recharge of {txn.amount} {txn.currency_code} for "
+                    f"{txn.meter.nickname or txn.meter.serial_number} was successful. "
+                    f"New credit balance: {txn.meter.credit_balance}.",
+                    meter=txn.meter,
+            )
         except Exception as e:
             # Payment succeeded but crediting failed — this must NOT be silently
             # lost. Flag it distinctly so it can be manually reconciled.
@@ -160,6 +173,15 @@ def _verify_and_fulfill(txn_ref, source='verify'):
             event=TransactionAuditLog.Event.VERIFY_FAILED,
             detail={'paystack_status': result.get('paystack_status'), 'source': source},
         )
+        if txn.user:
+            notify(
+                txn.user,
+                Notification.Type.FAILED_PAYMENT,
+                f"Your payment of {txn.amount} {txn.currency_code} for "
+                f"{txn.meter.nickname or txn.meter.serial_number} could not be "
+                f"confirmed. Reference: {txn.txn_ref}.",
+                meter=txn.meter,
+            )
 
     return txn, False
 

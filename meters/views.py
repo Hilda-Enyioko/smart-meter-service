@@ -7,6 +7,8 @@ from rest_framework.exceptions import ParseError
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from notifications.services import notify
+from notifications.models import Notification
 
 from .models import Meter, TelemetryReading
 from .serializers import (
@@ -77,19 +79,17 @@ class MeterDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class DeviceTelemetryView(APIView):
-    """
-    ESP32 POSTs a reading here every N seconds.
-    Body: { serial_number, device_key, voltage, current, power, energy, relay_state }
-    """
     permission_classes = [DeviceKeyAuthenticated]
 
     def post(self, request):
         serializer = TelemetryInSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        meter = request.meter  # attached by DeviceKeyAuthenticated
+        meter = request.meter
 
-        # Simple credit depletion for POC: subtract energy * a flat rate
+        was_low_credit = meter.is_low_credit
+        was_relay_on = meter.desired_relay_state
+
         RATE_PER_KWH = settings.CREDIT_RATE_PER_KWH
         if meter.credit_balance > 0:
             deduction = data['energy'] * RATE_PER_KWH
@@ -101,9 +101,9 @@ class DeviceTelemetryView(APIView):
         meter.last_energy = data['energy']
         meter.relay_state = data['relay_state']
         meter.status = Meter.Status.ONLINE
+        meter.offline_alert_sent = False
         meter.last_seen_at = timezone.now()
 
-        # Auto cut-off when credit hits zero
         if meter.credit_balance <= 0:
             meter.desired_relay_state = False
 
@@ -117,6 +117,27 @@ class DeviceTelemetryView(APIView):
             energy=data['energy'],
             relay_state=data['relay_state'],
         )
+
+        # --- Notification triggers, fire only on state TRANSITIONS, not every reading ---
+        if meter.user:
+            if meter.is_low_credit and not was_low_credit:
+                notify(
+                    meter.user,
+                    Notification.Type.LOW_CREDIT,
+                    f"Your credit balance for {meter.nickname or meter.serial_number} "
+                    f"has dropped to {meter.credit_balance}, at or below your alert "
+                    f"threshold of {meter.low_credit_threshold}.",
+                    meter=meter,
+                )
+
+            if was_relay_on and not meter.desired_relay_state:
+                notify(
+                    meter.user,
+                    Notification.Type.POWER_DISCONNECTION,
+                    f"Power to {meter.nickname or meter.serial_number} has been "
+                    f"automatically disconnected due to insufficient credit.",
+                    meter=meter,
+                )
 
         return Response({
             'received': True,
