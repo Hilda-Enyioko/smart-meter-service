@@ -33,7 +33,7 @@ The system enables consumers to view real-time energy telemetry, purchase electr
 * Current consumption
 * Active power
 * Energy consumption
-* Last meter communication timestamp
+* Last meter communication timestamp for monitoring
 
 ### 3. Energy Analytics
 
