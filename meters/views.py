@@ -79,6 +79,9 @@ class MeterDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class DeviceTelemetryView(APIView):
+    # Device authentication is handled exclusively by DeviceKeyAuthenticated.
+    # Do not run JWT/session authentication for ESP32 requests.
+    authentication_classes = []
     permission_classes = [DeviceKeyAuthenticated]
 
     def post(self, request):
@@ -152,6 +155,7 @@ class DeviceCommandView(APIView):
     ESP32 polls this to check what the relay SHOULD be doing.
     Query params: ?serial_number=X&device_key=Y
     """
+    authentication_classes = []
     permission_classes = [DeviceKeyAuthenticated]
 
     def get(self, request):
