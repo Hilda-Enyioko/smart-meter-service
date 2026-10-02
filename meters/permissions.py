@@ -4,10 +4,13 @@ from .models import Meter
 
 class DeviceKeyAuthenticated(BasePermission):
     """
-    Checks serial_number + device_key from request data/query params against the DB.
-    Attaches the matched meter to request.meter for the view to use.
+    Authenticates a device without user auth, sessions, or CSRF.
+
+    Accepts serial_number and device_key in query parameters or a JSON body,
+    then attaches the matched meter to request.meter for the view to use.
     """
     message = "Invalid serial_number or device_key."
+    code = "invalid_device_credentials"
 
     def has_permission(self, request, view):
         serial_number = request.data.get('serial_number') or request.query_params.get('serial_number')
