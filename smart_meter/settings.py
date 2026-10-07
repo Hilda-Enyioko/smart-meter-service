@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import timedelta
 import os
 import dj_database_url
+from decimal import Decimal
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -190,7 +191,7 @@ CSRF_TRUSTED_ORIGINS = [
 
 # Rate used to convert energy (kWh) into credit deducted. Shared between
 # meters/views.py (telemetry ingestion) and analytics calculations.
-CREDIT_RATE_PER_KWH = 0.15
+CREDIT_RATE_PER_KWH =Decimal("0.15")
 
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')

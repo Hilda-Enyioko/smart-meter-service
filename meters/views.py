@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from notifications.services import notify
 from notifications.models import Notification
+from decimal import Decimal
 
 from .models import Meter, TelemetryReading
 from .serializers import (
@@ -93,10 +94,11 @@ class DeviceTelemetryView(APIView):
         was_low_credit = meter.is_low_credit
         was_relay_on = meter.desired_relay_state
 
-        RATE_PER_KWH = settings.CREDIT_RATE_PER_KWH
+        RATE_PER_KWH = Decimal(str(settings.CREDIT_RATE_PER_KWH))
         if meter.credit_balance > 0:
-            deduction = data['energy'] * RATE_PER_KWH
-            meter.credit_balance = max(0, meter.credit_balance - deduction)
+            energy = Decimal(str(data['energy']))
+            deduction = energy * RATE_PER_KWH
+            meter.credit_balance = max(Decimal('0'), meter.credit_balance - deduction)
 
         meter.last_voltage = data['voltage']
         meter.last_current = data['current']
