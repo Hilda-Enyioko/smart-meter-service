@@ -1,34 +1,33 @@
-from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
+from django.conf import settings
 from django.db.models import Avg, Sum
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework.exceptions import ParseError
 from rest_framework import generics, permissions, status
+from rest_framework.exceptions import ParseError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from notifications.services import notify
-from notifications.models import Notification
-from decimal import Decimal
 
+from notifications.models import Notification
+from notifications.services import notify
+from users.permissions import IsAdminRole
 from .models import Meter, TelemetryReading
+from .permissions import DeviceKeyAuthenticated, IsMeterOwnerOrAdmin
 from .serializers import (
-    MeterRegisterSerializer,
-    MeterSerializer,
-    TelemetryInSerializer,
-    MeterDashboardSerializer,
+    AddCreditSerializer,
     ConsumptionBucketSerializer,
     CreditUsageAnalysisSerializer,
+    LowCreditThresholdSerializer,
+    MeterDashboardSerializer,
+    MeterRegisterSerializer,
+    MeterSerializer,
+    RelayCommandSerializer,
     RuntimeEstimateSerializer,
     TelemetryHistorySerializer,
-    AddCreditSerializer,
-    LowCreditThresholdSerializer,
-    RelayCommandSerializer,
+    TelemetryInSerializer,
 )
-from .permissions import DeviceKeyAuthenticated, IsMeterOwnerOrAdmin
-from users.permissions import IsAdminRole
-from django.shortcuts import get_object_or_404
-from django.conf import settings
 
 
 class RegisterMeterView(APIView):
@@ -95,7 +94,7 @@ class DeviceTelemetryView(APIView):
         was_relay_on = meter.desired_relay_state
 
         RATE_PER_KWH = Decimal(str(settings.CREDIT_RATE_PER_KWH))
-        if meter.credit_balance > 0:
+        if meter.credit_balance > Decimal('0'):
             energy = Decimal(str(data['energy']))
             deduction = energy * RATE_PER_KWH
             meter.credit_balance = max(Decimal('0'), meter.credit_balance - deduction)
@@ -109,7 +108,7 @@ class DeviceTelemetryView(APIView):
         meter.offline_alert_sent = False
         meter.last_seen_at = timezone.now()
 
-        if meter.credit_balance <= 0:
+        if meter.credit_balance <= Decimal('0'):
             meter.desired_relay_state = False
 
         meter.save()
@@ -258,6 +257,7 @@ class MeterConsumptionView(APIView):
         start, end = _parse_date_range(request, default_days=default_days)
 
         trunc_fn = self.TRUNC_MAP[period]
+        rate_per_kwh = Decimal(str(settings.CREDIT_RATE_PER_KWH))
 
         buckets = (
             meter.readings
@@ -274,13 +274,14 @@ class MeterConsumptionView(APIView):
 
         results = []
         for b in buckets:
-            total_energy = b['total_energy_kwh'] or 0
+            total_energy = Decimal(str(b['total_energy_kwh'] or 0))
+            total_cost = total_energy * rate_per_kwh
             results.append({
                 'period_start': b['period_start'],
-                'total_energy_kwh': round(total_energy, 4),
-                'total_cost': round(total_energy * settings.CREDIT_RATE_PER_KWH, 2),
+                'total_energy_kwh': round(float(total_energy), 4),
+                'total_cost': round(float(total_cost), 2),
                 'reading_count': b['reading_count'],
-                'avg_power': round(b['avg_power'], 2) if b['avg_power'] is not None else None,
+                'avg_power': round(float(b['avg_power']), 2) if b['avg_power'] is not None else None,
             })
 
         serializer = ConsumptionBucketSerializer(results, many=True)
@@ -304,21 +305,22 @@ class MeterCreditUsageView(APIView):
     def get(self, request, pk):
         meter = _get_owned_meter_or_404(request, pk)
         start, end = _parse_date_range(request, default_days=30)
+        rate_per_kwh = Decimal(str(settings.CREDIT_RATE_PER_KWH))
 
         agg = meter.readings.filter(created_at__gte=start, created_at__lte=end).aggregate(
             total_energy=Sum('energy')
         )
-        total_energy = agg['total_energy'] or 0
-        total_cost = total_energy * settings.CREDIT_RATE_PER_KWH
+        total_energy = Decimal(str(agg['total_energy'] or 0))
+        total_cost = total_energy * rate_per_kwh
 
-        days_in_period = max((end - start).total_seconds() / 86400, 1)
+        days_in_period = max(Decimal(str((end - start).total_seconds())) / Decimal('86400'), Decimal('1'))
 
         data = {
             'current_credit_balance': meter.credit_balance,
-            'total_energy_kwh_period': round(total_energy, 4),
-            'total_cost_period': round(total_cost, 2),
-            'average_daily_cost': round(total_cost / days_in_period, 2),
-            'average_daily_energy_kwh': round(total_energy / days_in_period, 4),
+            'total_energy_kwh_period': round(float(total_energy), 4),
+            'total_cost_period': round(float(total_cost), 2),
+            'average_daily_cost': round(float(total_cost / days_in_period), 2),
+            'average_daily_energy_kwh': round(float(total_energy / days_in_period), 4),
             'days_in_period': int(days_in_period),
         }
         serializer = CreditUsageAnalysisSerializer(data)
@@ -337,13 +339,14 @@ class MeterRuntimeEstimateView(APIView):
     def get(self, request, pk):
         meter = _get_owned_meter_or_404(request, pk)
         window_hours = int(request.query_params.get('window_hours', 24))
+        rate_per_kwh = Decimal(str(settings.CREDIT_RATE_PER_KWH))
 
         cutoff = timezone.now() - timedelta(hours=window_hours)
         recent = meter.readings.filter(created_at__gte=cutoff)
         basis = f"last {window_hours}h"
 
         agg = recent.aggregate(total_energy=Sum('energy'), count=Sum(1))
-        total_energy = agg['total_energy'] or 0
+        total_energy = Decimal(str(agg['total_energy'] or 0))
         count = agg['count'] or 0
 
         # Fall back to a 7-day window if too little recent data to be meaningful
@@ -351,7 +354,7 @@ class MeterRuntimeEstimateView(APIView):
             cutoff = timezone.now() - timedelta(days=7)
             recent = meter.readings.filter(created_at__gte=cutoff)
             agg = recent.aggregate(total_energy=Sum('energy'), count=Sum(1))
-            total_energy = agg['total_energy'] or 0
+            total_energy = Decimal(str(agg['total_energy'] or 0))
             count = agg['count'] or 0
             basis = "last 7 days (insufficient recent data)"
 
@@ -366,18 +369,18 @@ class MeterRuntimeEstimateView(APIView):
             }
             return Response(RuntimeEstimateSerializer(data).data)
 
-        hours_span = max((timezone.now() - cutoff).total_seconds() / 3600, 1)
+        hours_span = max(Decimal(str((timezone.now() - cutoff).total_seconds())) / Decimal('3600'), Decimal('1'))
         avg_hourly_energy = total_energy / hours_span
-        avg_hourly_cost = avg_hourly_energy * settings.CREDIT_RATE_PER_KWH
+        avg_hourly_cost = avg_hourly_energy * rate_per_kwh
 
         estimated_hours = (
-            float(meter.credit_balance) / avg_hourly_cost if avg_hourly_cost > 0 else None
+            float(meter.credit_balance / avg_hourly_cost) if avg_hourly_cost > Decimal('0') else None
         )
 
         data = {
             'current_credit_balance': meter.credit_balance,
-            'average_hourly_cost': round(avg_hourly_cost, 4),
-            'average_hourly_energy_kwh': round(avg_hourly_energy, 5),
+            'average_hourly_cost': round(float(avg_hourly_cost), 4),
+            'average_hourly_energy_kwh': round(float(avg_hourly_energy), 5),
             'estimated_hours_remaining': round(estimated_hours, 1) if estimated_hours is not None else None,
             'estimated_days_remaining': round(estimated_hours / 24, 2) if estimated_hours is not None else None,
             'basis': basis,
@@ -429,9 +432,6 @@ class AdminAddCreditView(APIView):
     """
     TEMPORARY / admin-only: manually add credit to a meter.
     POST /meters/<id>/admin-add-credit/   body: { "amount": 10.00 }
-    Exists to let you test the full depletion -> disconnect -> recharge -> 
-    restore cycle before the real payment/recharge endpoints are built.
-    Remove or restrict further once the payments app exists.
     """
     permission_classes = [IsAdminRole]
 
