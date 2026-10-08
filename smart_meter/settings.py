@@ -192,6 +192,7 @@ CSRF_TRUSTED_ORIGINS = [
 # Rate used to convert energy (kWh) into credit deducted. Shared between
 # meters/views.py (telemetry ingestion) and analytics calculations.
 CREDIT_RATE_PER_KWH =Decimal("0.15")
+CRON_SECRET = os.getenv('CRON_SECRET', '')
 
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 PAYSTACK_PUBLIC_KEY = os.getenv('PAYSTACK_PUBLIC_KEY')

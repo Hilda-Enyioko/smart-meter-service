@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+import secrets
 from django.conf import settings
 from django.db.models import Avg, Sum
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
@@ -13,6 +14,7 @@ from rest_framework.views import APIView
 from notifications.models import Notification
 from notifications.services import notify
 from users.permissions import IsAdminRole
+from .services import mark_stale_meters_offline
 from .models import Meter, TelemetryReading
 from .permissions import DeviceKeyAuthenticated, IsMeterOwnerOrAdmin
 from .serializers import (
@@ -447,3 +449,21 @@ class AdminAddCreditView(APIView):
             'credit_balance': meter.credit_balance,
             'desired_relay_state': meter.desired_relay_state,
         })
+
+
+class SweepOfflineMetersView(APIView):
+    """
+    Called by an external scheduler. Protected by a shared secret header.
+    POST /api/meters/internal/sweep-offline/   header: X-Cron-Token: <secret>
+    """
+    authentication_classes = []
+    permission_classes = []
+
+    def post(self, request):
+        expected = settings.CRON_SECRET
+        supplied = request.headers.get('X-Cron-Token', '')
+        if not expected or not secrets.compare_digest(supplied.encode(), expected.encode()):
+            return Response(status=status.HTTP_403_FORBIDDEN)
+
+        marked, alerted = mark_stale_meters_offline()
+        return Response({'marked_offline': marked, 'notified': alerted})

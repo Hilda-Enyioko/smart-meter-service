@@ -48,32 +48,37 @@ class TelemetryReadingSerializer(serializers.ModelSerializer):
 
 
 class MeterDashboardSerializer(serializers.ModelSerializer):
-    """Everything needed for the single-meter dashboard view."""
-    is_online = serializers.SerializerMethodField()
     is_low_credit = serializers.BooleanField(read_only=True)
+    is_online = serializers.BooleanField(read_only=True)  # reads the model property
+    status = serializers.CharField(source='effective_status', read_only=True)
+    relay_state = serializers.SerializerMethodField()
+    last_voltage = serializers.SerializerMethodField()
+    last_current = serializers.SerializerMethodField()
+    last_power = serializers.SerializerMethodField()
 
     class Meta:
         model = Meter
         fields = (
-            'id',
-            'serial_number',
-            'nickname',
-            'credit_balance',
-            'low_credit_threshold',
-            'is_low_credit',
-            'status',
-            'is_online',
-            'relay_state',
-            'desired_relay_state',
-            'last_voltage',
-            'last_current',
-            'last_power',
-            'last_energy',
+            'id', 'serial_number', 'nickname',
+            'credit_balance', 'low_credit_threshold', 'is_low_credit',
+            'status', 'is_online',
+            'relay_state', 'desired_relay_state',
+            'last_voltage', 'last_current', 'last_power', 'last_energy',
             'last_seen_at',
         )
 
-    def get_is_online(self, obj):
-        return obj.status == Meter.Status.ONLINE
+    def get_relay_state(self, m):
+        return m.relay_state if m.is_online else None
+
+    def get_last_voltage(self, m):
+        return m.last_voltage if m.is_online else 0
+
+    def get_last_current(self, m):
+        return m.last_current if m.is_online else 0
+
+    def get_last_power(self, m):
+        return m.last_power if m.is_online else 0
+
 
 class TelemetryHistorySerializer(serializers.ModelSerializer):
     class Meta:

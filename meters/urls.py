@@ -14,6 +14,7 @@ from .views import (
     AdminAddCreditView,
     LowCreditThresholdView,
     RelayControlView,
+    SweepOfflineMetersView,
 )
 
 urlpatterns = [
@@ -30,4 +31,5 @@ urlpatterns = [
     path('<int:pk>/threshold/', LowCreditThresholdView.as_view(), name='meter-threshold'),
     path('<int:pk>/relay/', RelayControlView.as_view(), name='meter-relay-control'),
     path('<int:pk>/admin-add-credit/', AdminAddCreditView.as_view(), name='meter-admin-add-credit'),
+    path('internal/sweep-offline/', SweepOfflineMetersView.as_view()),
 ]

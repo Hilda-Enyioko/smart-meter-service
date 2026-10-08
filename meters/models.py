@@ -4,7 +4,11 @@ from django.db import models
 from decimal import Decimal
 from notifications.services import notify
 from notifications.models import Notification
+from datetime import timedelta
+from django.utils import timezone
 
+
+OFFLINE_AFTER = timedelta(seconds=getattr(settings, 'METER_OFFLINE_AFTER_SECONDS', 60))
 
 
 def generate_device_key():
@@ -75,6 +79,17 @@ class Meter(models.Model):
             )
 
         return self
+    
+    @property
+    def is_online(self):
+        return (
+            self.last_seen_at is not None
+            and timezone.now() - self.last_seen_at <= OFFLINE_AFTER
+        )
+
+    @property
+    def effective_status(self):
+        return self.Status.ONLINE if self.is_online else self.Status.OFFLINE
 
 
 class TelemetryReading(models.Model):
